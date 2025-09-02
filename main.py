@@ -12,7 +12,7 @@ from sklearn.preprocessing import StandardScaler
 # =========================
 @st.cache_resource
 def load_model_and_scaler():
-    with open("xgboost_model.pkl", "rb") as f:
+    with open("gradient_boosting_model.pkl", "rb") as f:
         model = pickle.load(f)
     with open("scaler.pkl", "rb") as f:
         scaler = pickle.load(f)
