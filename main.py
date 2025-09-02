@@ -103,7 +103,7 @@ def plot_smas_emas(df, ticker):
     """Generates and plots SMAs, EMAs, and their crossovers."""
     
     # Plot SMA Crossovers
-    st.subheader("SMA Crossovers (21 vs 50 and 100 vs 200)")
+    st.subheader("SMA Crossovers 21 vs 50 ")
     fig, ax = plt.subplots(figsize=(14, 6))
     ax.plot(df.index, df['Close'], label='Close', color='black', linewidth=2)
     ax.plot(df.index, df['SMA_21'], label='SMA 21', color='blue')
@@ -113,7 +113,8 @@ def plot_smas_emas(df, ticker):
     ax.set_ylabel("Price (USD)")
     ax.legend()
     st.pyplot(fig)
-    
+
+    st.subheader("SMA Crossovers 100 vs 200 ")
     fig, ax = plt.subplots(figsize=(14, 6))
     ax.plot(df.index, df['Close'], label='Close', color='black', linewidth=2)
     ax.plot(df.index, df['SMA_100'], label='SMA 100', color='green')
@@ -125,7 +126,7 @@ def plot_smas_emas(df, ticker):
     st.pyplot(fig)
 
     # Plot EMA Crossovers
-    st.subheader("EMA Crossovers (21 vs 50 and 100 vs 200)")
+    st.subheader("EMA Crossovers 21 vs 50 ")
     fig, ax = plt.subplots(figsize=(14, 6))
     ax.plot(df.index, df['Close'], label='Close', color='black', linewidth=2)
     ax.plot(df.index, df['EMA_21'], label='EMA 21', color='blue')
@@ -136,6 +137,7 @@ def plot_smas_emas(df, ticker):
     ax.legend()
     st.pyplot(fig)
 
+    st.subheader("EMA Crossovers 100 vs 200 ")
     fig, ax = plt.subplots(figsize=(14, 6))
     ax.plot(df.index, df['Close'], label='Close', color='black', linewidth=2)
     ax.plot(df.index, df['EMA_100'], label='EMA 100', color='green')
