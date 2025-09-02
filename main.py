@@ -43,10 +43,19 @@ def preprocess_and_engineer_features(df):
     df.fillna(method='ffill', inplace=True)
     df.fillna(method='bfill', inplace=True)
 
+    df['Returns'] = df['Close'].pct_change()
+    
     lags = [1, 5, 14, 21, 50, 100, 200]
     for lag in lags:
         df[f'lag_{lag}'] = df['Close'].shift(lag)
-
+    
+    # Add features from the original notebook
+    df['SMA_21'] = df['Close'].rolling(window=21).mean()
+    df['SMA_100'] = df['Close'].rolling(window=100).mean()
+    df['SMA_200'] = df['Close'].rolling(window=200).mean()
+    df['EMA_21'] = df['Close'].ewm(span=21, adjust=False).mean()
+    df['EMA_100'] = df['Close'].ewm(span=100, adjust=False).mean()
+    df['EMA_200'] = df['Close'].ewm(span=200, adjust=False).mean()
     df['rolling_mean_20'] = df['Close'].rolling(window=20).mean()
     df['rolling_std_20'] = df['Close'].rolling(window=20).std()
     df['rolling_mean_50'] = df['Close'].rolling(window=50).mean()
@@ -55,7 +64,9 @@ def preprocess_and_engineer_features(df):
     df['month'] = df.index.month
     df['year'] = df.index.year
     df['weekofyear'] = df.index.isocalendar().week.astype(int)
+    df['dayofweek'] = df.index.dayofweek
 
+    # Drop rows with NaN values after feature creation
     df.dropna(inplace=True)
     return df
 
@@ -64,10 +75,6 @@ def preprocess_and_engineer_features(df):
 # =========================
 def plot_smas_emas(df, ticker):
     """Generates and plots SMAs, EMAs, and their crossovers."""
-    for ma in [21, 100, 200]:
-        df[f'SMA_{ma}'] = df['Close'].rolling(window=ma).mean()
-        df[f'EMA_{ma}'] = df['Close'].ewm(span=ma, adjust=False).mean()
-
     # Closing price with SMA
     fig, ax = plt.subplots(figsize=(14, 6))
     ax.plot(df.index, df['Close'], label='Close', color='black', linewidth=2)
