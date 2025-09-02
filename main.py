@@ -1,14 +1,11 @@
 import streamlit as st
+import yfinance as yf
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import yfinance as yf
 import pickle
-from datetime import datetime, timedelta
 
-# ==============================
-# Load Model and Scaler
-# ==============================
+# Load trained model and scaler
 with open("gradient_boosting_model.pkl", "rb") as f:
     model = pickle.load(f)
 
@@ -25,106 +22,86 @@ TRAIN_FEATURES = [
     'day', 'month', 'year', 'weekofyear', 'dayofweek'
 ]
 
-# ==============================
-# Feature Engineering
-# ==============================
+# Feature engineering function
 def preprocess_and_engineer_features(df):
-    df['Date'] = df.index
+    df['lag_1'] = df['Close'].shift(1)
+    df['lag_5'] = df['Close'].shift(5)
+    df['lag_14'] = df['Close'].shift(14)
+    df['lag_21'] = df['Close'].shift(21)
+    df['lag_50'] = df['Close'].shift(50)
+    df['lag_100'] = df['Close'].shift(100)
+    df['lag_200'] = df['Close'].shift(200)
+
+    df['SMA_21'] = df['Close'].rolling(window=21).mean()
+    df['SMA_100'] = df['Close'].rolling(window=100).mean()
+    df['SMA_200'] = df['Close'].rolling(window=200).mean()
+
+    df['EMA_21'] = df['Close'].ewm(span=21, adjust=False).mean()
+    df['EMA_100'] = df['Close'].ewm(span=100, adjust=False).mean()
+    df['EMA_200'] = df['Close'].ewm(span=200, adjust=False).mean()
+
+    df['rolling_mean_20'] = df['Close'].rolling(window=20).mean()
+    df['rolling_std_20'] = df['Close'].rolling(window=20).std()
+
     df['day'] = df.index.day
     df['month'] = df.index.month
     df['year'] = df.index.year
-    df['weekofyear'] = df.index.isocalendar().week.astype(int)
+    df['weekofyear'] = df.index.isocalendar().week
     df['dayofweek'] = df.index.dayofweek
-
-    # Lags
-    for lag in [1, 5, 14, 21, 50, 100, 200]:
-        df[f'lag_{lag}'] = df['Close'].shift(lag)
-
-    # Moving averages
-    for win in [21, 100, 200]:
-        df[f'SMA_{win}'] = df['Close'].rolling(window=win).mean()
-        df[f'EMA_{win}'] = df['Close'].ewm(span=win, adjust=False).mean()
-
-    # Rolling stats
-    df['rolling_mean_20'] = df['Close'].rolling(window=20).mean()
-    df['rolling_std_20'] = df['Close'].rolling(window=20).std()
 
     df = df.dropna()
     return df
 
-# ==============================
-# Prediction
-# ==============================
+# Prediction function (fixed)
 def predict_tomorrow(df):
-    latest = df.tail(1)[TRAIN_FEATURES]
+    latest = df.tail(1)[TRAIN_FEATURES]   # ✅ only use training features
     latest_scaled = scaler.transform(latest)
     return model.predict(latest_scaled)[0]
 
-# ==============================
-# Streamlit App
-# ==============================
-st.title("📈 Stock Price Forecasting & SMA Crossovers")
+# Streamlit UI
+st.title("📈 Stock Price Forecasting & SMA Crossover App")
 
-# User input
-ticker = st.text_input("Enter stock ticker (e.g., RELIANCE.NS):", "RELIANCE.NS")
-start_date = st.date_input("Start Date", datetime(2020, 1, 1))
-end_date = st.date_input("End Date", datetime.today())
+ticker = st.text_input("Enter Stock Ticker:", "RELIANCE.NS")
+start_date = st.date_input("Start Date", pd.to_datetime("2015-01-01"))
+end_date = st.date_input("End Date", pd.to_datetime("today"))
 
 if st.button("Run Analysis"):
-    # Load stock data
-    stock = yf.download(ticker, start=start_date, end=end_date)
-    if stock.empty:
-        st.error("No data found for the selected stock.")
+    # Fetch stock data
+    df = yf.download(ticker, start=start_date, end=end_date)
+    if df.empty:
+        st.error("⚠️ No data found for the given ticker and date range.")
     else:
-        df = preprocess_and_engineer_features(stock)
+        df = preprocess_and_engineer_features(df)
 
-        # ==============================
-        # Forecast Tomorrow
-        # ==============================
-        tomorrow_price = predict_tomorrow(df)
-        st.subheader(f"🔮 Predicted Closing Price for Tomorrow: {tomorrow_price:.2f} INR")
-
-        # Plot Tomorrow Forecast
-        plt.figure(figsize=(10, 5))
-        plt.plot(df.index, df['Close'], label="Historical Closing Price", alpha=0.7)
-        plt.scatter(df.index[-1] + timedelta(days=1), tomorrow_price,
-                    color="red", label="Tomorrow's Forecast", s=100, marker="*")
-        plt.title(f"{ticker} Closing Price & Tomorrow's Forecast")
-        plt.xlabel("Date")
-        plt.ylabel("Price (INR)")
+        # Show stock chart with SMA crossovers
+        plt.figure(figsize=(12, 6))
+        plt.plot(df['Close'], label="Stock Closing Price")
+        plt.plot(df['SMA_21'], label="21-day SMA")
+        plt.plot(df['SMA_50'], label="50-day SMA")
+        plt.title(f"{ticker} Closing Price with 21 & 50 SMA Crossovers")
         plt.legend()
         st.pyplot(plt)
 
-        # ==============================
-        # SMA Crossovers (21 & 50)
-        # ==============================
-        df['SMA_21'] = df['Close'].rolling(window=21).mean()
-        df['SMA_50'] = df['Close'].rolling(window=50).mean()
+        # Predict tomorrow's price
+        forecast = predict_tomorrow(df)
+        st.subheader(f"🔮 Tomorrow's Forecasted Price: {forecast:.2f} INR")
 
-        plt.figure(figsize=(10, 5))
-        plt.plot(df.index, df['Close'], label="Closing Price", alpha=0.7)
-        plt.plot(df.index, df['SMA_21'], label="21 SMA", linewidth=1.5)
-        plt.plot(df.index, df['SMA_50'], label="50 SMA", linewidth=1.5)
-        plt.title(f"{ticker}: Closing Price with 21 & 50 SMA Crossovers")
-        plt.xlabel("Date")
-        plt.ylabel("Price (INR)")
+        # Plot forecast point
+        plt.figure(figsize=(12, 6))
+        plt.plot(df['Close'], label="Stock Closing Price")
+        plt.scatter(df.index[-1] + pd.Timedelta(days=1), forecast, color="red", label="Forecasted Price")
+        plt.title(f"{ticker} with Tomorrow's Forecast")
         plt.legend()
         st.pyplot(plt)
 
-        # ==============================
-        # Compare with NIFTY
-        # ==============================
-        nifty = yf.download("^NSEI", start=start_date, end=end_date)['Close']
-        compare_df = pd.DataFrame({
-            ticker: df['Close'],
-            'NIFTY': nifty
-        }).dropna()
-
-        plt.figure(figsize=(10, 5))
-        plt.plot(compare_df.index, compare_df[ticker], label=ticker, alpha=0.7)
-        plt.plot(compare_df.index, compare_df['NIFTY'], label="NIFTY 50", alpha=0.7)
-        plt.title(f"{ticker} vs NIFTY 50")
-        plt.xlabel("Date")
-        plt.ylabel("Closing Price (INR)")
-        plt.legend()
-        st.pyplot(plt)
+        # Compare with NIFTY 50
+        try:
+            nifty = yf.download("^NSEI", start=start_date, end=end_date)
+            plt.figure(figsize=(12, 6))
+            plt.plot(df['Close'] / df['Close'].iloc[0], label=f"{ticker} Normalized")
+            plt.plot(nifty['Close'] / nifty['Close'].iloc[0], label="NIFTY 50 Normalized")
+            plt.title(f"{ticker} vs NIFTY 50")
+            plt.legend()
+            st.pyplot(plt)
+        except Exception as e:
+            st.error(f"⚠️ Error fetching NIFTY 50: {e}")
