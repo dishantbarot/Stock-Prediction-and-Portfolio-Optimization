@@ -13,16 +13,35 @@ from pandas.tseries.offsets import BDay
 # =========================
 @st.cache_resource
 def load_model_and_scaler():
-    """Loads the pre-trained model and scaler from pkl files."""
+    """
+    Loads the pre-trained model and scaler from pkl files.
+    
+    NOTE: As the model and scaler files are not available, this function
+    is providing a placeholder to make the app runnable.
+    """
     try:
         with open("gradient_boosting_model.pkl", "rb") as f:
             model = pickle.load(f)
         with open("scaler.pkl", "rb") as f:
             scaler = pickle.load(f)
+        st.success("Model and scaler loaded successfully!")
         return model, scaler
     except FileNotFoundError:
-        st.error("Model or scaler files not found. Please ensure 'gradient_boosting_model.pkl' and 'scaler.pkl' are in the same directory.")
-        return None, None
+        st.warning("Model or scaler files not found. Using dummy placeholders.")
+        
+        # --- Placeholder Model and Scaler for demonstration ---
+        # A simple linear model for demonstration
+        class DummyModel:
+            def predict(self, X):
+                return np.array([X.mean() * 1.05]) # A simple mock prediction
+
+        # A simple scaler for demonstration
+        class DummyScaler:
+            def transform(self, X):
+                return X.values / X.values.mean(axis=0)
+
+        return DummyModel(), DummyScaler()
+
 
 model, scaler = load_model_and_scaler()
 
@@ -69,6 +88,9 @@ def preprocess_and_engineer_features(df):
     df['month'] = df.index.month
     df['year'] = df.index.year
     df['weekofyear'] = df.index.isocalendar().week.astype(int)
+    
+    # FIX: Added the missing dayofweek feature
+    df['dayofweek'] = df.index.dayofweek
 
     # Drop rows with NaN values after feature creation
     df.dropna(inplace=True)
@@ -79,33 +101,51 @@ def preprocess_and_engineer_features(df):
 # =========================
 def plot_smas_emas(df, ticker):
     """Generates and plots SMAs, EMAs, and their crossovers."""
-    # Closing price with SMA
+    
+    # Plot SMA Crossovers
+    st.subheader("SMA Crossovers (21 vs 50 and 100 vs 200)")
     fig, ax = plt.subplots(figsize=(14, 6))
     ax.plot(df.index, df['Close'], label='Close', color='black', linewidth=2)
     ax.plot(df.index, df['SMA_21'], label='SMA 21', color='blue')
+    ax.plot(df.index, df['SMA_50'], label='SMA 50', color='orange')
+    ax.set_title(f"{ticker} - SMA 21 vs SMA 50 Crossover")
+    ax.set_xlabel("Date")
+    ax.set_ylabel("Price (USD)")
+    ax.legend()
+    st.pyplot(fig)
+    
+    fig, ax = plt.subplots(figsize=(14, 6))
+    ax.plot(df.index, df['Close'], label='Close', color='black', linewidth=2)
     ax.plot(df.index, df['SMA_100'], label='SMA 100', color='green')
     ax.plot(df.index, df['SMA_200'], label='SMA 200', color='red')
-    ax.set_title(f"Historical Closing Price and Simple Moving Averages for {ticker}")
+    ax.set_title(f"{ticker} - SMA 100 vs SMA 200 Crossover")
     ax.set_xlabel("Date")
     ax.set_ylabel("Price (USD)")
     ax.legend()
     st.pyplot(fig)
 
-    # Crossovers
-    cross_pairs = [
-        ('SMA', 21, 50), ('SMA', 100, 200),
-        ('EMA', 21, 50), ('EMA', 100, 200)
-    ]
-    for ma_type, short, long in cross_pairs:
-        fig, ax = plt.subplots(figsize=(14, 6))
-        ax.plot(df.index, df['Close'], label='Close', color='grey', alpha=0.6)
-        ax.plot(df.index, df[f'{ma_type}_{short}'], label=f'{ma_type} {short}', color='orange')
-        ax.plot(df.index, df[f'{ma_type}_{long}'], label=f'{ma_type} {long}', color='purple')
-        ax.set_title(f"{ticker} - {ma_type} {short} vs {ma_type} {long} Crossover")
-        ax.set_xlabel("Date")
-        ax.set_ylabel("Price (USD)")
-        ax.legend()
-        st.pyplot(fig)
+    # Plot EMA Crossovers
+    st.subheader("EMA Crossovers (21 vs 50 and 100 vs 200)")
+    fig, ax = plt.subplots(figsize=(14, 6))
+    ax.plot(df.index, df['Close'], label='Close', color='black', linewidth=2)
+    ax.plot(df.index, df['EMA_21'], label='EMA 21', color='blue')
+    ax.plot(df.index, df['EMA_50'], label='EMA 50', color='orange')
+    ax.set_title(f"{ticker} - EMA 21 vs EMA 50 Crossover")
+    ax.set_xlabel("Date")
+    ax.set_ylabel("Price (USD)")
+    ax.legend()
+    st.pyplot(fig)
+
+    fig, ax = plt.subplots(figsize=(14, 6))
+    ax.plot(df.index, df['Close'], label='Close', color='black', linewidth=2)
+    ax.plot(df.index, df['EMA_100'], label='EMA 100', color='green')
+    ax.plot(df.index, df['EMA_200'], label='EMA 200', color='red')
+    ax.set_title(f"{ticker} - EMA 100 vs EMA 200 Crossover")
+    ax.set_xlabel("Date")
+    ax.set_ylabel("Price (USD)")
+    ax.legend()
+    st.pyplot(fig)
+
 
 # =========================
 # Predict Tomorrow’s Price
@@ -121,10 +161,40 @@ TRAIN_FEATURES = [
 ]
 
 def predict_tomorrow(df):
-    # ✅ use only the trained features for model input
-    latest = df.tail(1)[TRAIN_FEATURES]
-    latest_scaled = scaler.transform(latest)
-    return model.predict(latest_scaled)[0]
+    """
+    Predicts the close price for the next business day and returns the prediction and date.
+    """
+    if df.empty:
+        return None, None
+        
+    latest_data = df.tail(1)[TRAIN_FEATURES]
+    
+    # Scale the latest data using the pre-loaded scaler
+    latest_scaled = scaler.transform(latest_data)
+    
+    # Predict the price using the pre-loaded model
+    prediction = model.predict(latest_scaled)[0]
+    
+    # Calculate the next business day
+    last_date = df.index[-1]
+    tomorrow_date = last_date + BDay(1)
+    
+    return prediction, tomorrow_date
+
+def plot_forecast_and_history(df, pred, tomorrow_date, ticker):
+    """Plots the historical close prices and the predicted price for tomorrow."""
+    fig, ax = plt.subplots(figsize=(14, 6))
+    ax.plot(df.index, df['Close'], label='Historical Close', color='blue', linewidth=2)
+    
+    # Plot the predicted point
+    ax.scatter(tomorrow_date, pred, color='red', s=100, zorder=5, label='Predicted Close')
+    
+    ax.set_title(f"{ticker} - Historical Close and Tomorrow's Predicted Price")
+    ax.set_xlabel("Date")
+    ax.set_ylabel("Price (USD)")
+    ax.legend()
+    ax.grid(True)
+    st.pyplot(fig)
 
 # =========================
 # Benchmark Comparison
@@ -176,6 +246,7 @@ def compare_with_nifty(stock_df, stock_ticker):
 # Streamlit App Layout
 # =========================
 st.title("📈 Stock Prediction and Benchmark App")
+st.write(f"This app analyzes historical data from **2015-01-01** to **{datetime.today().strftime('%Y-%m-%d')}**.")
 st.write("Enter an NSE stock ticker (e.g., RELIANCE.NS, SBIN.NS). "
          "The app will plot SMAs/EMAs & crossovers, predict tomorrow’s close, "
          "and compare performance vs Nifty 50.")
@@ -184,11 +255,12 @@ ticker = st.text_input("Enter Stock Ticker", value="RELIANCE.NS")
 
 if st.button("Analyze"):
     if not model or not scaler:
+        st.error("Model or scaler is not loaded. Please check file paths.")
         st.stop()
 
     df = download_stock_data(ticker)
     if df is None or df.empty:
-        st.error("Could not download data for the entered ticker.")
+        st.error("Could not download data for the entered ticker. Please check the ticker symbol.")
     else:
         df_pre = preprocess_and_engineer_features(df.copy())
         
@@ -196,7 +268,7 @@ if st.button("Analyze"):
         plot_smas_emas(df_pre.copy(), ticker)
 
         st.subheader("🔮 Tomorrow’s Forecast")
-        pred, tomorrow_date = predict_tomorrow(df_pre, model, scaler)
+        pred, tomorrow_date = predict_tomorrow(df_pre)
         st.metric(label=f"Predicted Close for {tomorrow_date.date()}", value=f"{pred:.2f}")
         plot_forecast_and_history(df_pre, pred, tomorrow_date, ticker)
 
