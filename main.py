@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import pickle
 from datetime import datetime
 from sklearn.preprocessing import StandardScaler
+import xgboost as xgb
 
 # =========================
 # Load Model and Scaler
