@@ -1,3 +1,8 @@
+
+# At the top of main.py (before importing your model)
+import os
+os.system('pip install xgboost==1.7.6 scikit-learn==1.3.0 yfinance matplotlib pandas numpy')
+
 import streamlit as st
 import yfinance as yf
 import pandas as pd
