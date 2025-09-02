@@ -110,28 +110,21 @@ def plot_smas_emas(df, ticker):
 # =========================
 # Predict Tomorrow’s Price
 # =========================
-def predict_tomorrow(df, model, scaler):
-    """Predicts the next trading day's closing price."""
-    features = [col for col in df.columns if col not in ['Close', 'Adj Close']]
-    latest = df.tail(1)[features]
+# Features used during training
+TRAIN_FEATURES = [
+    'lag_1', 'lag_5', 'lag_14', 'lag_21',
+    'lag_50', 'lag_100', 'lag_200',
+    'SMA_21', 'SMA_100', 'SMA_200',
+    'EMA_21', 'EMA_100', 'EMA_200',
+    'rolling_mean_20', 'rolling_std_20',
+    'day', 'month', 'year', 'weekofyear', 'dayofweek'
+]
+
+def predict_tomorrow(df):
+    # ✅ use only the trained features for model input
+    latest = df.tail(1)[TRAIN_FEATURES]
     latest_scaled = scaler.transform(latest)
-    pred = model.predict(latest_scaled)[0]
-
-    # Next business day
-    tomorrow_date = df.index[-1] + BDay(1)
-    return pred, tomorrow_date
-
-def plot_forecast_and_history(df, pred, tomorrow_date, ticker):
-    """Plots the historical price and the predicted next-day price."""
-    fig, ax = plt.subplots(figsize=(14, 6))
-    ax.plot(df.index, df['Close'], label='Historical Close', color='black')
-    ax.scatter([tomorrow_date], [pred], color='red', s=100, zorder=5, label='Predicted Close')
-    ax.set_title(f"Historical Price and Tomorrow's Forecast for {ticker}")
-    ax.set_xlabel("Date")
-    ax.set_ylabel("Price (USD)")
-    ax.legend()
-    ax.grid(True, which='both', linestyle='--', linewidth=0.5)
-    st.pyplot(fig)
+    return model.predict(latest_scaled)[0]
 
 # =========================
 # Benchmark Comparison
