@@ -1,7 +1,4 @@
 
-# At the top of main.py (before importing your model)
-import os
-os.system('pip install xgboost==1.7.6 scikit-learn==1.3.0 yfinance matplotlib pandas numpy')
 
 import streamlit as st
 import yfinance as yf
@@ -17,13 +14,14 @@ from sklearn.preprocessing import StandardScaler
 # =========================
 @st.cache_resource
 def load_model_and_scaler():
-    with open('xgboost_model.pkl', 'rb') as f:
+    with open("xgboost_model.pkl", "rb") as f:
         model = pickle.load(f)
-    with open('scaler.pkl', 'rb') as f:
+    with open("scaler.pkl", "rb") as f:
         scaler = pickle.load(f)
     return model, scaler
 
 model, scaler = load_model_and_scaler()
+
 
 # =========================
 # Data Download & Processing
