@@ -3,6 +3,5 @@ pandas
 numpy
 yfinance
 matplotlib
-seaborn
-scikit-learn==1.3.2
-xgboost==1.7.6
+xgboost
+scikit-learn
