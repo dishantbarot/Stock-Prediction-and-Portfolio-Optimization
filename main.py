@@ -1,278 +1,181 @@
 import streamlit as st
-import yfinance as yf
 import pandas as pd
 import numpy as np
+import yfinance as yf
 import matplotlib.pyplot as plt
+import seaborn as sns
+import xgboost as xgb
 import pickle
-from datetime import datetime
-from sklearn.preprocessing import StandardScaler
-from pandas.tseries.offsets import BDay
+from datetime import datetime, timedelta
 
-# =========================
-# Load Model and Scaler
-# =========================
+# Load the trained model and scaler
 @st.cache_resource
 def load_model_and_scaler():
-    """
-    Loads the pre-trained model and scaler from pkl files.
-    
-    NOTE: As the model and scaler files are not available, this function
-    is providing a placeholder to make the app runnable.
-    """
-    try:
-        with open("gradient_boosting_model.pkl", "rb") as f:
-            model = pickle.load(f)
-        with open("scaler.pkl", "rb") as f:
-            scaler = pickle.load(f)
-        st.success("Model and scaler loaded successfully!")
-        return model, scaler
-    except FileNotFoundError:
-        st.warning("Model or scaler files not found. Using dummy placeholders.")
-        
-        # --- Placeholder Model and Scaler for demonstration ---
-        # A simple linear model for demonstration
-        class DummyModel:
-            def predict(self, X):
-                return np.array([X.mean() * 1.05]) # A simple mock prediction
+    # Load the XGBoost model
+    model = xgb.XGBRegressor()
+    model.load_model('xgb_model.json')
 
-        # A simple scaler for demonstration
-        class DummyScaler:
-            def transform(self, X):
-                return X.values / X.values.mean(axis=0)
+    # Load the scaler
+    with open('scaler (1).pkl', 'rb') as f:
+        scaler = pickle.load(f)
 
-        return DummyModel(), DummyScaler()
-
+    return model, scaler
 
 model, scaler = load_model_and_scaler()
 
-# =========================
-# Data Download & Processing
-# =========================
-def download_stock_data(ticker):
-    """Downloads historical stock data for a given ticker."""
-    start_date = "2015-01-01"
-    end_date = datetime.today().strftime('%Y-%m-%d')
-    data = yf.download(ticker, start=start_date, end=end_date, progress=False)
-    if data.empty:
+# Function to download stock data
+def download_stock_data(ticker, start_date, end_date):
+    try:
+        data = yf.download(ticker, start=start_date, end=end_date, group_by="column")
+        if data.empty:
+            st.error(f"No data found for ticker {ticker}. Please check the symbol and date range.")
+            return None
+        return data
+    except Exception as e:
+        st.error(f"An error occurred while downloading data for {ticker}: {e}")
         return None
-    return data
 
+# Function for feature engineering
 def preprocess_and_engineer_features(df):
-    """Preprocesses data and engineers features for the model."""
-    df.fillna(method='ffill', inplace=True)
-    df.fillna(method='bfill', inplace=True)
+    df.index = pd.to_datetime(df.index)
+    
+    # Use only single level column names
+    df.columns = [col[0] if isinstance(col, tuple) else col for col in df.columns]
 
+    # Fill missing values
+    raw_cols = ['Open', 'High', 'Low', 'Close', 'Volume']
+    df[raw_cols] = df[raw_cols].fillna(method='ffill').fillna(method='bfill')
+
+    # Feature Engineering
     df['Returns'] = df['Close'].pct_change()
-    
-    lags = [1, 5, 14, 21, 50, 100, 200]
-    for lag in lags:
+    for lag in [7, 9, 21, 50, 100, 200]:
         df[f'lag_{lag}'] = df['Close'].shift(lag)
-    
-    # Add features from the original notebook
-    df['SMA_7'] = df['Close'].rolling(window=7).mean()
-    df['SMA_14'] = df['Close'].rolling(window=14).mean()
-    df['SMA_21'] = df['Close'].rolling(window=21).mean()
-    df['SMA_50'] = df['Close'].rolling(window=50).mean()
-    df['SMA_100'] = df['Close'].rolling(window=100).mean()
-    df['SMA_200'] = df['Close'].rolling(window=200).mean()
-    df['EMA_14'] = df['Close'].ewm(span=14, adjust=False).mean()
-    df['EMA_21'] = df['Close'].ewm(span=21, adjust=False).mean()
-    df['EMA_50'] = df['Close'].ewm(span=50, adjust=False).mean()
-    df['EMA_100'] = df['Close'].ewm(span=100, adjust=False).mean()
-    df['EMA_200'] = df['Close'].ewm(span=200, adjust=False).mean()
-    df['rolling_mean_20'] = df['Close'].rolling(window=20).mean()
-    df['rolling_std_20'] = df['Close'].rolling(window=20).std()
-    df['rolling_mean_50'] = df['Close'].rolling(window=50).mean()
-
+    for window in [7, 9, 21, 50, 100, 200]:
+        df[f'rolling_mean_{window}'] = df['Close'].rolling(window=window).mean()
+        df[f'rolling_std_{window}'] = df['Close'].rolling(window=window).std()
     df['day'] = df.index.day
     df['month'] = df.index.month
     df['year'] = df.index.year
     df['weekofyear'] = df.index.isocalendar().week.astype(int)
-    
-    # FIX: Added the missing dayofweek feature
-    df['dayofweek'] = df.index.dayofweek
 
-    # Drop rows with NaN values after feature creation
-    df.dropna(inplace=True)
     return df
 
-# =========================
-# Plot SMA and EMA + Crossovers
-# =========================
-def plot_smas_emas(df, ticker):
-    """Generates and plots SMAs, EMAs, and their crossovers."""
-    
-    # Plot SMA Crossovers
-    st.subheader("SMA Crossovers 21 vs 50 ")
-    fig, ax = plt.subplots(figsize=(14, 6))
-    ax.plot(df.index, df['Close'], label='Close', color='black', linewidth=2)
-    ax.plot(df.index, df['SMA_21'], label='SMA 21', color='blue')
-    ax.plot(df.index, df['SMA_50'], label='SMA 50', color='orange')
-    ax.set_title(f"{ticker} - SMA 21 vs SMA 50 Crossover")
-    ax.set_xlabel("Date")
-    ax.set_ylabel("Price (USD)")
-    ax.legend()
-    st.pyplot(fig)
+# Streamlit App
+st.title('Stock Price Prediction and Analysis App')
 
-    st.subheader("SMA Crossovers 100 vs 200 ")
-    fig, ax = plt.subplots(figsize=(14, 6))
-    ax.plot(df.index, df['Close'], label='Close', color='black', linewidth=2)
-    ax.plot(df.index, df['SMA_100'], label='SMA 100', color='green')
-    ax.plot(df.index, df['SMA_200'], label='SMA 200', color='red')
-    ax.set_title(f"{ticker} - SMA 100 vs SMA 200 Crossover")
-    ax.set_xlabel("Date")
-    ax.set_ylabel("Price (USD)")
-    ax.legend()
-    st.pyplot(fig)
+st.markdown("""
+**Disclaimer:**
 
-    # Plot EMA Crossovers
-    st.subheader("EMA Crossovers 21 vs 50 ")
-    fig, ax = plt.subplots(figsize=(14, 6))
-    ax.plot(df.index, df['Close'], label='Close', color='black', linewidth=2)
-    ax.plot(df.index, df['EMA_21'], label='EMA 21', color='blue')
-    ax.plot(df.index, df['EMA_50'], label='EMA 50', color='orange')
-    ax.set_title(f"{ticker} - EMA 21 vs EMA 50 Crossover")
-    ax.set_xlabel("Date")
-    ax.set_ylabel("Price (USD)")
-    ax.legend()
-    st.pyplot(fig)
+Predicted stock prices are estimates based on historical data. Markets are volatile, and these predictions may not reflect actual future prices. Use for informational purposes only; always do your own research and manage risk.
+""")
 
-    st.subheader("EMA Crossovers 100 vs 200 ")
-    fig, ax = plt.subplots(figsize=(14, 6))
-    ax.plot(df.index, df['Close'], label='Close', color='black', linewidth=2)
-    ax.plot(df.index, df['EMA_100'], label='EMA 100', color='green')
-    ax.plot(df.index, df['EMA_200'], label='EMA 200', color='red')
-    ax.set_title(f"{ticker} - EMA 100 vs EMA 200 Crossover")
-    ax.set_xlabel("Date")
-    ax.set_ylabel("Price (USD)")
-    ax.legend()
-    st.pyplot(fig)
+# User input for ticker
+ticker_input = st.text_input("Enter the Stock Ticker (e.g., INFY, RELIANCE):", 'INFY').strip().upper()
 
+if st.button('Analyze'):
+    if ticker_input:
+        ticker = ticker_input + ".NS"
+        start_date = "2015-01-01"
+        end_date = datetime.today().strftime('%Y-%m-%d')
 
-# =========================
-# Predict Tomorrow’s Price
-# =========================
-# Features used during training
-TRAIN_FEATURES = [
-    'lag_1', 'lag_5', 'lag_14', 'lag_21',
-    'lag_50', 'lag_100', 'lag_200',
-    'SMA_21', 'SMA_100', 'SMA_200',
-    'EMA_21', 'EMA_100', 'EMA_200',
-    'rolling_mean_20', 'rolling_std_20',
-    'day', 'month', 'year', 'weekofyear', 'dayofweek'
-]
+        # Download data
+        with st.spinner(f'Downloading data for {ticker_input}...'):
+            stock_data = download_stock_data(ticker, start_date, end_date)
 
-def predict_tomorrow(df):
-    """
-    Predicts the close price for the next business day and returns the prediction and date.
-    """
-    if df.empty:
-        return None, None
-        
-    latest_data = df.tail(1)[TRAIN_FEATURES]
-    
-    # Scale the latest data using the pre-loaded scaler
-    latest_scaled = scaler.transform(latest_data)
-    
-    # Predict the price using the pre-loaded model
-    prediction = model.predict(latest_scaled)[0]
-    
-    # Calculate the next business day
-    last_date = df.index[-1]
-    tomorrow_date = last_date + BDay(1)
-    
-    return prediction, tomorrow_date
+        if stock_data is not None:
+            # --- 1. Crossover Plots ---
+            st.header("Crossover Plots")
+            stock_data['SMA_50'] = stock_data['Close'].rolling(window=50).mean()
+            stock_data['SMA_200'] = stock_data['Close'].rolling(window=200).mean()
+            stock_data['EMA_50'] = stock_data['Close'].ewm(span=50, adjust=False).mean()
+            stock_data['EMA_200'] = stock_data['Close'].ewm(span=200, adjust=False).mean()
+            
+            # Plotting
+            plt.style.use('seaborn-v0_8-darkgrid')
+            
+            # SMA Crossover Plot
+            st.subheader("SMA Crossover (50-day vs 200-day)")
+            fig, ax = plt.subplots(figsize=(12, 6))
+            ax.plot(stock_data.index, stock_data['Close'], label='Close Price')
+            ax.plot(stock_data.index, stock_data['SMA_50'], label='50-Day SMA')
+            ax.plot(stock_data.index, stock_data['SMA_200'], label='200-Day SMA')
+            ax.set_title(f"{ticker_input} - SMA Crossover")
+            ax.set_xlabel("Date")
+            ax.set_ylabel("Price")
+            ax.legend()
+            st.pyplot(fig)
 
-def plot_forecast_and_history(df, pred, tomorrow_date, ticker):
-    """Plots the historical close prices and the predicted price for tomorrow."""
-    fig, ax = plt.subplots(figsize=(14, 6))
-    ax.plot(df.index, df['Close'], label='Historical Close', color='blue', linewidth=2)
-    
-    # Plot the predicted point
-    ax.scatter(tomorrow_date, pred, color='red', s=100, zorder=5, label='Predicted Close')
-    
-    ax.set_title(f"{ticker} - Historical Close and Tomorrow's Predicted Price")
-    ax.set_xlabel("Date")
-    ax.set_ylabel("Price (USD)")
-    ax.legend()
-    ax.grid(True)
-    st.pyplot(fig)
+            # EMA Crossover Plot
+            st.subheader("EMA Crossover (50-day vs 200-day)")
+            fig, ax = plt.subplots(figsize=(12, 6))
+            ax.plot(stock_data.index, stock_data['Close'], label='Close Price')
+            ax.plot(stock_data.index, stock_data['EMA_50'], label='50-Day EMA')
+            ax.plot(stock_data.index, stock_data['EMA_200'], label='200-Day EMA')
+            ax.set_title(f"{ticker_input} - EMA Crossover")
+            ax.set_xlabel("Date")
+            ax.set_ylabel("Price")
+            ax.legend()
+            st.pyplot(fig)
 
-# =========================
-# Benchmark Comparison
-# =========================
-def compare_with_nifty(stock_df, stock_ticker):
-    """Compares the stock's cumulative returns with the Nifty 50 benchmark."""
-    nifty = '^NSEI'
-    nifty_df = download_stock_data(nifty)
-    if nifty_df is None:
-        st.warning("Could not download Nifty 50 data.")
-        return
+            # --- 2. Price Prediction ---
+            st.header("Tomorrow's Price Prediction")
+            with st.spinner('Predicting tomorrow\'s price...'):
+                # Preprocess data for prediction
+                processed_data = preprocess_and_engineer_features(stock_data.copy())
+                processed_data = processed_data.iloc[-1:].drop(columns=['Close', 'High', 'Low', 'Open', 'Volume', 'Returns'])
+                
+                # Check for NaN values and handle them
+                if processed_data.isnull().values.any():
+                    st.warning("Could not make a prediction due to insufficient historical data for feature engineering.")
+                else:
+                    # Scale the features
+                    scaled_features = scaler.transform(processed_data)
+                    
+                    # Predict
+                    prediction = model.predict(scaled_features)
+                    predicted_price = prediction[0]
 
-    # Ensure both dataframes cover the same time period
-    start_date = max(stock_df.index.min(), nifty_df.index.min())
-    end_date = min(stock_df.index.max(), nifty_df.index.max())
+                    # Plotting prediction
+                    last_close = stock_data['Close'].iloc[-1]
+                    st.write(f"Last Close Price: **{last_close:.2f}**")
+                    st.write(f"Predicted Tomorrow's Price: **{predicted_price:.2f}**")
 
-    stock_df_aligned = stock_df.loc[start_date:end_date]
-    nifty_df_aligned = nifty_df.loc[start_date:end_date]
+                    fig, ax = plt.subplots(figsize=(12, 6))
+                    ax.plot(stock_data.index[-100:], stock_data['Close'][-100:], label='Historical Prices')
+                    ax.plot(stock_data.index[-1], last_close, 'ro', label=f'Last Close: {last_close:.2f}')
+                    ax.plot(stock_data.index[-1] + timedelta(days=1), predicted_price, 'go', label=f'Prediction: {predicted_price:.2f}')
+                    ax.set_title(f"{ticker_input} - Price Prediction")
+                    ax.set_xlabel("Date")
+                    ax.set_ylabel("Price")
+                    ax.legend()
+                    st.pyplot(fig)
+            
+            # --- 3. Benchmark Comparison ---
+            st.header("Comparison with Nifty50")
+            with st.spinner('Comparing with Nifty50...'):
+                nifty_data = download_stock_data('^NSEI', start_date, end_date)
+                if nifty_data is not None:
+                    comparison_df = pd.DataFrame()
+                    comparison_df[ticker_input] = stock_data['Close']
+                    comparison_df['Nifty50'] = nifty_data['Close']
+                    
+                    # Calculate cumulative returns
+                    cumulative_returns = (comparison_df / comparison_df.iloc[0]) - 1
 
-    # Calculate returns and cumulative returns
-    stock_df_aligned['Returns'] = stock_df_aligned['Close'].pct_change()
-    nifty_df_aligned['Returns'] = nifty_df_aligned['Close'].pct_change()
+                    # Plotting comparison
+                    fig, ax = plt.subplots(figsize=(12, 6))
+                    ax.plot(cumulative_returns.index, cumulative_returns[ticker_input], label=f'{ticker_input} Cumulative Returns')
+                    ax.plot(cumulative_returns.index, cumulative_returns['Nifty50'], label='Nifty50 Cumulative Returns')
+                    ax.set_title(f"{ticker_input} vs. Nifty50 Cumulative Returns")
+                    ax.set_xlabel("Date")
+                    ax.set_ylabel("Cumulative Returns")
+                    ax.legend()
+                    st.pyplot(fig)
 
-    stock_df_aligned['Cumulative Returns'] = (1 + stock_df_aligned['Returns']).cumprod() - 1
-    nifty_df_aligned['Cumulative Returns'] = (1 + nifty_df_aligned['Returns']).cumprod() - 1
-
-    fig, ax = plt.subplots(figsize=(14, 6))
-    ax.plot(stock_df_aligned.index, stock_df_aligned['Cumulative Returns'], label=f'{stock_ticker} Cumulative Returns', color='blue')
-    ax.plot(nifty_df_aligned.index, nifty_df_aligned['Cumulative Returns'], label='Nifty 50 Cumulative Returns', color='orange')
-    ax.axhline(0, color='black', linestyle='--', linewidth=1)
-    ax.set_title(f"Cumulative Returns: {stock_ticker} vs. Nifty 50")
-    ax.set_xlabel("Date")
-    ax.set_ylabel("Cumulative Returns")
-    ax.legend()
-    st.pyplot(fig)
-
-    stock_final = stock_df_aligned['Cumulative Returns'].iloc[-1]
-    nifty_final = nifty_df_aligned['Cumulative Returns'].iloc[-1]
-
-    st.markdown("### Investment Recommendation")
-    st.write(f"{stock_ticker} Return: **{stock_final:.2%}**")
-    st.write(f"Nifty 50 Return: **{nifty_final:.2%}**")
-    if stock_final > nifty_final:
-        st.success(f"**{stock_ticker} outperformed Nifty 50 → Consider BUY.**")
-    else:
-        st.info(f"**Nifty 50 outperformed {stock_ticker} → Consider avoiding.**")
-
-# =========================
-# Streamlit App Layout
-# =========================
-st.title("📈 Stock Prediction and Benchmark App")
-st.write(f"This app analyzes historical data from **2015-01-01** to **{datetime.today().strftime('%Y-%m-%d')}**.")
-st.write("Enter an NSE stock ticker (e.g., RELIANCE.NS, SBIN.NS). "
-         "The app will plot SMAs/EMAs & crossovers, predict tomorrow’s close, "
-         "and compare performance vs Nifty 50.")
-
-ticker = st.text_input("Enter Stock Ticker", value="RELIANCE.NS")
-
-if st.button("Analyze"):
-    if not model or not scaler:
-        st.error("Model or scaler is not loaded. Please check file paths.")
-        st.stop()
-
-    df = download_stock_data(ticker)
-    if df is None or df.empty:
-        st.error("Could not download data for the entered ticker. Please check the ticker symbol.")
-    else:
-        df_pre = preprocess_and_engineer_features(df.copy())
-        
-        st.subheader("📊 SMAs, EMAs and Crossovers")
-        plot_smas_emas(df_pre.copy(), ticker)
-
-        st.subheader("🔮 Tomorrow’s Forecast")
-        pred, tomorrow_date = predict_tomorrow(df_pre)
-        st.metric(label=f"Predicted Close for {tomorrow_date.date()}", value=f"{pred:.2f}")
-        plot_forecast_and_history(df_pre, pred, tomorrow_date, ticker)
-
-        st.subheader("📌 Compare with Nifty 50")
-        compare_with_nifty(df.copy(), ticker)
+            # --- 4. Recommendation ---
+            st.header("Recommendation")
+            if 'predicted_price' in locals():
+                if predicted_price > last_close:
+                    st.success(f"**Buy** - The predicted price ({predicted_price:.2f}) is higher than the last close price ({last_close:.2f}).")
+                else:
+                    st.error(f"**Don't Buy** - The predicted price ({predicted_price:.2f}) is not higher than the last close price ({last_close:.2f}).")
