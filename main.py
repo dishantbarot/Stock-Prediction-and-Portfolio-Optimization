@@ -16,7 +16,7 @@ def load_model_and_scaler():
     model.load_model('xgb_model.json')
 
     # Load the scaler
-    with open('scaler (1).pkl', 'rb') as f:
+    with open('scaler_1.pkl', 'rb') as f:
         scaler = pickle.load(f)
 
     return model, scaler
