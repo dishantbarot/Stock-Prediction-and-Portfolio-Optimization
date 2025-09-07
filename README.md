@@ -1,37 +1,96 @@
-# 📈 Stock Price Prediction and Portfolio Optimization  
+# 📈 Stock Price Forecasting and Portfolio Optimization
 
-A **Hybrid Machine Learning Project** for forecasting stock prices, evaluating model performance, and comparing portfolio returns against benchmarks like **Nifty 50**.  
-This project leverages **Random Forest, XGBoost, and Gradient Boosting** to build predictive models and provides insights through **comparative financial analysis**.  
-
----
-
-## 🚀 Features  
-- ✅ **Automated Data Acquisition** using `yfinance`  
-- ✅ **Feature Engineering** (lags, rolling statistics, returns, time-based features)  
-- ✅ **Exploratory Data Analysis (EDA)** with professional plots (SMAs, EMAs, crossovers)  
-- ✅ **Hybrid ML Models**: Random Forest, Gradient Boosting, XGBoost  
-- ✅ **Model Performance Metrics** (MAE, MSE, RMSE, R²)  
-- ✅ **One-Day Ahead Forecasting** with visualization  
-- ✅ **Portfolio Benchmarking** against **Nifty 50 Index**  
-- ✅ **Investment Recommendation Engine**  
+A machine learning–driven application for forecasting stock prices, analyzing technical indicators, and comparing stock performance with benchmarks such as the Nifty 50.  
+This project leverages **XGBoost**, **technical analysis**, and **portfolio optimization techniques** to provide data-driven insights for investors and researchers.
 
 ---
 
-## 🛠 Tech Stack  
-- **Python 3**  
-- **Data Handling**: `pandas`, `numpy`, `datetime`  
-- **Visualization**: `matplotlib`, `seaborn`  
-- **Machine Learning**: `scikit-learn`, `xgboost`  
-- **Financial Data**: `yfinance`  
+## 🚀 Features
+
+- **Stock Data Download**  
+  Fetches historical stock data directly from Yahoo Finance (`yfinance`).
+
+- **Feature Engineering**  
+  - Daily returns, lagged prices, rolling means, rolling volatility.  
+  - SMA (Simple Moving Averages) and EMA (Exponential Moving Averages).  
+  - Calendar-based features (day, month, year, week-of-year).
+
+- **Machine Learning Forecasting**  
+  - Trains an **XGBoost Regressor** on engineered features.  
+  - Predicts next-day stock closing price.  
+  - Supports GPU acceleration (`gpu_hist`).
+
+- **Crossover Analysis**  
+  - Visualizes SMA and EMA crossovers (21 vs 50, 50 vs 200).  
+  - Detects short- and long-term trading signals.
+
+- **Benchmark Comparison**  
+  - Compares stock daily and cumulative returns against **Nifty 50**.  
+  - Line charts for return analysis.
+
+- **Investment Recommendation**  
+  - Suggests **BUY** if the stock outperforms the benchmark.  
+  - Suggests **HOLD/AVOID** if it underperforms.
+
+- **Interactive Dashboard**  
+  - Built with **Streamlit** for ease of use.  
+  - User-friendly plots and insights.  
 
 ---
 
-## 📂 Project Structure  
-```bash
-├── stock_analysis.py     # Main script
-├── README.md             # Documentation
-└── requirements.txt      # Dependencies
+## 🛠️ Tech Stack
 
-## Clone this repository
-git clone https://github.com/dishantbarot/stock-price-prediction.git
-cd stock-price-prediction
+- **Programming Language:** Python 3.x  
+- **Libraries:**  
+  - `pandas`, `numpy`, `matplotlib`  
+  - `yfinance` (stock data)  
+  - `xgboost` (ML model)  
+  - `scikit-learn` (scaling, preprocessing)  
+  - `streamlit` (interactive dashboard)  
+
+---
+
+## 📂 Project Structure
+├── main.py # Main Streamlit app
+├── xgb_model.json # Trained XGBoost model
+├── scaler_1.pkl # Saved Scaler
+├── requirements.txt # Python dependencies
+├── README.md # Project documentation
+
+
+---
+
+## ▶️ How to Run
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/dishantbarot/Stock-Prediction-and-Portfolio-Optimization.git
+   cd Stock-Prediction-and-Portfolio-Optimization
+
+2. **Create Virtual Environment**
+python -m venv venv
+source venv/bin/activate   # Mac/Linux
+venv\Scripts\activate      # Windows
+
+3. **Install Dependencies**
+pip install -r requirements.txt
+
+4. **Run the app**
+streamlit run main.py
+
+
+**📊 Example Outputs**
+
+SMA & EMA Crossovers
+
+Returns Comparison
+
+Tomorrow’s Price Prediction
+Predicted Tomorrow's Close Price: ₹ 2,456.80
+
+
+**⚠️ Disclaimer**
+
+This tool is for educational and informational purposes only.
+Predictions and recommendations are based on historical data and machine learning models.
+They should not be considered financial advice. Please consult a qualified financial advisor before making investment decisions.
