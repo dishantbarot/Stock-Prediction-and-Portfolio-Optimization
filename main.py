@@ -172,10 +172,46 @@ if st.button('Analyze'):
                     ax.legend()
                     st.pyplot(fig)
 
-            # --- 4. Recommendation ---
-            st.header("Recommendation")
-            if 'predicted_price' in locals():
-                if predicted_price > last_close:
-                    st.success(f"**Buy** - The predicted price ({predicted_price:.2f}) is higher than the last close price ({last_close:.2f}).")
-                else:
-                    st.error(f"**Don't Buy** - The predicted price ({predicted_price:.2f}) is not higher than the last close price ({last_close:.2f}).")
+    stock_final = stock_df_aligned['Cumulative Returns'].iloc[-1]
+    nifty_final = nifty_df_aligned['Cumulative Returns'].iloc[-1]
+
+    st.markdown("### Investment Recommendation")
+    st.write(f"{stock_ticker} Return: **{stock_final:.2%}**")
+    st.write(f"Nifty 50 Return: **{nifty_final:.2%}**")
+    if stock_final > nifty_final:
+        st.success(f"**{stock_ticker} outperformed Nifty 50 → Consider BUY.**")
+    else:
+        st.info(f"**Nifty 50 outperformed {stock_ticker} → Consider avoiding.**")
+
+# =========================
+# Streamlit App Layout
+# =========================
+st.title("📈 Stock Prediction and Benchmark App")
+st.write(f"This app analyzes historical data from **2015-01-01** to **{datetime.today().strftime('%Y-%m-%d')}**.")
+st.write("Enter an NSE stock ticker (e.g., RELIANCE.NS, SBIN.NS). "
+         "The app will plot SMAs/EMAs & crossovers, predict tomorrow’s close, "
+         "and compare performance vs Nifty 50.")
+
+ticker = st.text_input("Enter Stock Ticker", value="RELIANCE.NS")
+
+if st.button("Analyze"):
+    if not model or not scaler:
+        st.error("Model or scaler is not loaded. Please check file paths.")
+        st.stop()
+
+    df = download_stock_data(ticker)
+    if df is None or df.empty:
+        st.error("Could not download data for the entered ticker. Please check the ticker symbol.")
+    else:
+        df_pre = preprocess_and_engineer_features(df.copy())
+        
+        st.subheader("📊 SMAs, EMAs and Crossovers")
+        plot_smas_emas(df_pre.copy(), ticker)
+
+        st.subheader("🔮 Tomorrow’s Forecast")
+        pred, tomorrow_date = predict_tomorrow(df_pre)
+        st.metric(label=f"Predicted Close for {tomorrow_date.date()}", value=f"{pred:.2f}")
+        plot_forecast_and_history(df_pre, pred, tomorrow_date, ticker)
+
+        st.subheader("📌 Compare with Nifty 50")
+        compare_with_nifty(df.copy(), ticker)
