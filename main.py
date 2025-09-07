@@ -1,3 +1,19 @@
+import subprocess
+import sys
+
+# Function to install packages if missing
+def install_if_missing(package_name):
+    try:
+        __import__(package_name)
+    except ImportError:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", package_name])
+
+# Check and install required packages
+required_packages = ['xgboost', 'pandas', 'numpy', 'yfinance', 'matplotlib', 'seaborn', 'scikit-learn', 'streamlit']
+for pkg in required_packages:
+    install_if_missing(pkg)
+
+# Now import safely
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -7,6 +23,7 @@ import seaborn as sns
 import xgboost as xgb
 import pickle
 from datetime import datetime, timedelta
+
 
 # Load the trained model and scaler
 @st.cache_resource
