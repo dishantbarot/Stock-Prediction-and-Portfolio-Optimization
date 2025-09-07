@@ -1,4 +1,21 @@
-pip install xgboost
+# =========================================================================
+# Corrected and Unified Streamlit App Code
+# =========================================================================
+
+import subprocess
+import sys
+
+# Function to install packages if missing
+def install_if_missing(package_name):
+    try:
+        __import__(package_name)
+    except ImportError:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", package_name])
+
+# Check and install required packages
+required_packages = ['xgboost', 'pandas', 'numpy', 'yfinance', 'matplotlib', 'seaborn', 'scikit-learn', 'streamlit']
+for pkg in required_packages:
+    install_if_missing(pkg)
 
 # Now import safely
 import streamlit as st
@@ -11,23 +28,26 @@ import xgboost as xgb
 import pickle
 from datetime import datetime, timedelta
 
-
 # Load the trained model and scaler
+# Make sure 'xgb_model.json' and 'scaler_1.pkl' are in the same directory
 @st.cache_resource
 def load_model_and_scaler():
-    # Load the XGBoost model
-    model = xgb.XGBRegressor()
-    model.load_model('xgb_model.json')
+    try:
+        model = xgb.XGBRegressor()
+        model.load_model('xgb_model.json')
 
-    # Load the scaler
-    with open('scaler_1.pkl', 'rb') as f:
-        scaler = pickle.load(f)
-
-    return model, scaler
+        with open('scaler_1.pkl', 'rb') as f:
+            scaler = pickle.load(f)
+        
+        return model, scaler
+    except FileNotFoundError:
+        st.error("Model or scaler files not found. Please ensure 'xgb_model.json' and 'scaler_1.pkl' are in the directory.")
+        return None, None
 
 model, scaler = load_model_and_scaler()
 
 # Function to download stock data
+@st.cache_data(show_spinner=False)
 def download_stock_data(ticker, start_date, end_date):
     try:
         data = yf.download(ticker, start=start_date, end=end_date, group_by="column")
@@ -60,29 +80,30 @@ def preprocess_and_engineer_features(df):
     df['day'] = df.index.day
     df['month'] = df.index.month
     df['year'] = df.index.year
+    # Convert 'week' to a numeric type, as isocalendar can return a multi-index
     df['weekofyear'] = df.index.isocalendar().week.astype(int)
 
     return df
 
-# Streamlit App
-st.title('Stock Price Prediction and Analysis App')
+# Main Streamlit App Layout
+st.title('📈 Stock Price Prediction and Analysis App')
 
 st.markdown("""
-**Disclaimer:**
-
-Predicted stock prices are estimates based on historical data. Markets are volatile, and these predictions may not reflect actual future prices. Use for informational purposes only; always do your own research and manage risk.
+**Disclaimer:** Predicted stock prices are estimates based on historical data. Markets are volatile, and these predictions may not not reflect actual future prices. Use for informational purposes only; always do your own research and manage risk.
 """)
 
-# User input for ticker
 ticker_input = st.text_input("Enter the Stock Ticker (e.g., INFY, RELIANCE):", 'INFY').strip().upper()
 
 if st.button('Analyze'):
+    if not model or not scaler:
+        st.error("Model or scaler is not loaded. Please check file paths and reload the app.")
+        st.stop()
+
     if ticker_input:
         ticker = ticker_input + ".NS"
         start_date = "2015-01-01"
         end_date = datetime.today().strftime('%Y-%m-%d')
 
-        # Download data
         with st.spinner(f'Downloading data for {ticker_input}...'):
             stock_data = download_stock_data(ticker, start_date, end_date)
 
@@ -94,7 +115,6 @@ if st.button('Analyze'):
             stock_data['EMA_50'] = stock_data['Close'].ewm(span=50, adjust=False).mean()
             stock_data['EMA_200'] = stock_data['Close'].ewm(span=200, adjust=False).mean()
             
-            # Plotting
             plt.style.use('seaborn-v0_8-darkgrid')
             
             # SMA Crossover Plot
@@ -108,7 +128,7 @@ if st.button('Analyze'):
             ax.set_ylabel("Price")
             ax.legend()
             st.pyplot(fig)
-
+            
             # EMA Crossover Plot
             st.subheader("EMA Crossover (50-day vs 200-day)")
             fig, ax = plt.subplots(figsize=(12, 6))
@@ -120,30 +140,31 @@ if st.button('Analyze'):
             ax.set_ylabel("Price")
             ax.legend()
             st.pyplot(fig)
-
+            
             # --- 2. Price Prediction ---
             st.header("Tomorrow's Price Prediction")
             with st.spinner('Predicting tomorrow\'s price...'):
-                # Preprocess data for prediction
                 processed_data = preprocess_and_engineer_features(stock_data.copy())
-                processed_data = processed_data.iloc[-1:].drop(columns=['Close', 'High', 'Low', 'Open', 'Volume', 'Returns'])
                 
-                # Check for NaN values and handle them
+                # Check for sufficient data for feature engineering (especially for rolling means)
                 if processed_data.isnull().values.any():
-                    st.warning("Could not make a prediction due to insufficient historical data for feature engineering.")
+                    st.warning("Could not make a prediction due to insufficient historical data for feature engineering. Please choose a longer date range.")
                 else:
+                    # Select only the last row and features used for training
+                    features_to_predict = processed_data.iloc[-1:].drop(columns=['Close', 'Open', 'High', 'Low', 'Volume', 'Returns'], errors='ignore')
+                    
                     # Scale the features
-                    scaled_features = scaler.transform(processed_data)
+                    scaled_features = scaler.transform(features_to_predict)
                     
                     # Predict
                     prediction = model.predict(scaled_features)
                     predicted_price = prediction[0]
-
+                    
                     # Plotting prediction
                     last_close = stock_data['Close'].iloc[-1]
                     st.write(f"Last Close Price: **{last_close:.2f}**")
                     st.write(f"Predicted Tomorrow's Price: **{predicted_price:.2f}**")
-
+                    
                     fig, ax = plt.subplots(figsize=(12, 6))
                     ax.plot(stock_data.index[-100:], stock_data['Close'][-100:], label='Historical Prices')
                     ax.plot(stock_data.index[-1], last_close, 'ro', label=f'Last Close: {last_close:.2f}')
@@ -158,14 +179,18 @@ if st.button('Analyze'):
             st.header("Comparison with Nifty50")
             with st.spinner('Comparing with Nifty50...'):
                 nifty_data = download_stock_data('^NSEI', start_date, end_date)
+                
                 if nifty_data is not None:
                     comparison_df = pd.DataFrame()
                     comparison_df[ticker_input] = stock_data['Close']
                     comparison_df['Nifty50'] = nifty_data['Close']
                     
+                    # Align indices to ensure same date ranges
+                    comparison_df = comparison_df.dropna()
+                    
                     # Calculate cumulative returns
                     cumulative_returns = (comparison_df / comparison_df.iloc[0]) - 1
-
+                    
                     # Plotting comparison
                     fig, ax = plt.subplots(figsize=(12, 6))
                     ax.plot(cumulative_returns.index, cumulative_returns[ticker_input], label=f'{ticker_input} Cumulative Returns')
@@ -175,47 +200,21 @@ if st.button('Analyze'):
                     ax.set_ylabel("Cumulative Returns")
                     ax.legend()
                     st.pyplot(fig)
-
-    stock_final = stock_df_aligned['Cumulative Returns'].iloc[-1]
-    nifty_final = nifty_df_aligned['Cumulative Returns'].iloc[-1]
-
-    st.markdown("### Investment Recommendation")
-    st.write(f"{stock_ticker} Return: **{stock_final:.2%}**")
-    st.write(f"Nifty 50 Return: **{nifty_final:.2%}**")
-    if stock_final > nifty_final:
-        st.success(f"**{stock_ticker} outperformed Nifty 50 → Consider BUY.**")
-    else:
-        st.info(f"**Nifty 50 outperformed {stock_ticker} → Consider avoiding.**")
-
-# =========================
-# Streamlit App Layout
-# =========================
-st.title("📈 Stock Prediction and Benchmark App")
-st.write(f"This app analyzes historical data from **2015-01-01** to **{datetime.today().strftime('%Y-%m-%d')}**.")
-st.write("Enter an NSE stock ticker (e.g., RELIANCE.NS, SBIN.NS). "
-         "The app will plot SMAs/EMAs & crossovers, predict tomorrow’s close, "
-         "and compare performance vs Nifty 50.")
-
-ticker = st.text_input("Enter Stock Ticker", value="RELIANCE.NS")
-
-if st.button("Analyze"):
-    if not model or not scaler:
-        st.error("Model or scaler is not loaded. Please check file paths.")
-        st.stop()
-
-    df = download_stock_data(ticker)
-    if df is None or df.empty:
-        st.error("Could not download data for the entered ticker. Please check the ticker symbol.")
-    else:
-        df_pre = preprocess_and_engineer_features(df.copy())
-        
-        st.subheader("📊 SMAs, EMAs and Crossovers")
-        plot_smas_emas(df_pre.copy(), ticker)
-
-        st.subheader("🔮 Tomorrow’s Forecast")
-        pred, tomorrow_date = predict_tomorrow(df_pre)
-        st.metric(label=f"Predicted Close for {tomorrow_date.date()}", value=f"{pred:.2f}")
-        plot_forecast_and_history(df_pre, pred, tomorrow_date, ticker)
-
-        st.subheader("📌 Compare with Nifty 50")
-        compare_with_nifty(df.copy(), ticker)
+                    
+                    # --- Investment Recommendation ---
+                    st.header("Investment Recommendation")
+                    
+                    # Check if cumulative returns exist
+                    if not cumulative_returns.empty:
+                        stock_final = cumulative_returns[ticker_input].iloc[-1]
+                        nifty_final = cumulative_returns['Nifty50'].iloc[-1]
+                        
+                        st.write(f"{ticker_input} Return: **{stock_final:.2%}**")
+                        st.write(f"Nifty 50 Return: **{nifty_final:.2%}**")
+                        
+                        if stock_final > nifty_final:
+                            st.success(f"**{ticker_input} outperformed Nifty 50 → Consider BUY.**")
+                        else:
+                            st.info(f"**Nifty 50 outperformed {ticker_input} → Consider avoiding.**")
+                    else:
+                        st.warning("Not enough data to provide an investment recommendation.")
